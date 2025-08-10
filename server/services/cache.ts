@@ -242,6 +242,31 @@ export class CacheService {
 
     console.log('Cache cleanup scheduler started');
   }
+
+  /**
+   * Get cache status for monitoring and health checks
+   */
+  async getCacheStatus(): Promise<Array<{ key: string; expired: boolean; expiresAt: Date }>> {
+    try {
+      const allCache = await db
+        .select({
+          key: dashboardCache.cacheKey,
+          expiresAt: dashboardCache.expiresAt
+        })
+        .from(dashboardCache)
+        .orderBy(dashboardCache.createdAt);
+
+      const now = new Date();
+      return allCache.map(cache => ({
+        key: cache.key,
+        expired: now > cache.expiresAt,
+        expiresAt: cache.expiresAt
+      }));
+    } catch (error) {
+      console.error('Error getting cache status:', error);
+      return [];
+    }
+  }
 }
 
 export const cacheService = new CacheService();
