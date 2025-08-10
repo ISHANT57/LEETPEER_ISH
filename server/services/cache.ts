@@ -6,6 +6,7 @@ import { storage } from "../storage";
 export class CacheService {
   private readonly DEFAULT_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
   private readonly STALE_CACHE_DURATION = 60 * 60 * 1000; // 1 hour for stale data
+  private readonly PRODUCTION_WARMUP_LIMIT = 20; // Limit student cache in production
 
   /**
    * Get cached data for a specific key
@@ -158,9 +159,11 @@ export class CacheService {
       const batch2028Data = await storage.getBatchDashboard('2028');
       await this.setCachedData('batch_2028', batch2028Data);
 
-      // Warm up student dashboards for active students
+      // Warm up student dashboards for active students (production-optimized)
       const allStudents = await storage.getAllStudents();
-      const recentlyActiveStudents = allStudents.slice(0, 50); // Limit to avoid overwhelming
+      const isProduction = process.env.NODE_ENV === 'production';
+      const studentLimit = isProduction ? this.PRODUCTION_WARMUP_LIMIT : 50;
+      const recentlyActiveStudents = allStudents.slice(0, studentLimit);
 
       for (const student of recentlyActiveStudents) {
         try {

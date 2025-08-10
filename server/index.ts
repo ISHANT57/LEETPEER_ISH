@@ -47,15 +47,28 @@ app.use((req, res, next) => {
     // Initialize cache service and warm up cache
     cacheService.startCacheCleanup();
     
-    // Warm up cache after a brief delay to ensure all services are ready
+    // Warm up cache after services are ready (production-safe timing)
+    const cacheWarmupDelay = process.env.NODE_ENV === 'production' ? 30000 : 10000; // 30s for production, 10s for dev
     setTimeout(async () => {
       try {
+        console.log('Starting cache warm-up...');
         await cacheService.warmUpCache();
-        console.log('Initial cache warm-up completed');
+        console.log('Cache warm-up completed successfully');
       } catch (error) {
-        console.log('Cache warm-up delayed due to initialization:', error instanceof Error ? error.message : 'Unknown error');
+        console.log('Cache warm-up will retry later:', error instanceof Error ? error.message : 'Unknown error');
+        // Retry once after 2 minutes in production
+        if (process.env.NODE_ENV === 'production') {
+          setTimeout(async () => {
+            try {
+              await cacheService.warmUpCache();
+              console.log('Cache warm-up retry completed');
+            } catch (retryError) {
+              console.log('Cache warm-up retry failed - will rely on on-demand caching');
+            }
+          }, 120000);
+        }
       }
-    }, 10000); // 10 second delay
+    }, cacheWarmupDelay);
 
     const server = await registerRoutes(app);
 

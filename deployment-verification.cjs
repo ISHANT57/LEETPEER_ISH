@@ -1,101 +1,273 @@
 #!/usr/bin/env node
 
 /**
- * Deployment Verification Script
- * Checks all necessary files and configurations for Render deployment
+ * Deployment Verification Script for LeetCode Progress Tracker
+ * Tests all critical endpoints and caching functionality after deployment
  */
 
-const fs = require('fs');
-const path = require('path');
+const http = require('http');
+const https = require('https');
 
-function checkFile(filePath, description) {
-  const exists = fs.existsSync(filePath);
-  console.log(`${exists ? '✅' : '❌'} ${description}: ${filePath}`);
-  return exists;
-}
+const baseUrl = process.env.DEPLOYMENT_URL || 'http://localhost:10000';
+const isHttps = baseUrl.startsWith('https');
+const httpModule = isHttps ? https : http;
 
-function checkBuildOutput() {
-  const distPublic = path.resolve(__dirname, 'dist', 'public');
-  const serverPublic = path.resolve(__dirname, 'server', 'public');
-  
-  console.log('\n📦 Build Output Verification:');
-  
-  const distExists = checkFile(distPublic, 'Frontend build directory');
-  const serverExists = checkFile(serverPublic, 'Server public directory');
-  
-  if (distExists) {
-    checkFile(path.join(distPublic, 'index.html'), 'Frontend index.html');
-    checkFile(path.join(distPublic, 'assets'), 'Frontend assets directory');
+console.log('🚀 Starting deployment verification...');
+console.log(`Testing: ${baseUrl}`);
+
+// Test configuration
+const tests = [
+  {
+    name: 'Health Check',
+    path: '/healthcheck',
+    expectedStatus: 200,
+    critical: true
+  },
+  {
+    name: 'Static Assets',
+    path: '/',
+    expectedStatus: 200,
+    critical: true
+  },
+  {
+    name: 'Cache Status API',
+    path: '/api/cache/status',
+    expectedStatus: 200,
+    critical: false
+  },
+  {
+    name: 'Admin Dashboard API',
+    path: '/api/dashboard/admin',
+    expectedStatus: 200,
+    critical: false
+  },
+  {
+    name: 'University Dashboard API',
+    path: '/api/dashboard/university',
+    expectedStatus: 200,
+    critical: false
+  },
+  {
+    name: 'Students API',
+    path: '/api/students',
+    expectedStatus: 200,
+    critical: false
+  },
+  {
+    name: 'Leaderboard API',
+    path: '/api/leaderboard',
+    expectedStatus: 200,
+    critical: false
   }
-  
-  if (serverExists) {
-    checkFile(path.join(serverPublic, 'index.html'), 'Server index.html');
-    checkFile(path.join(serverPublic, 'assets'), 'Server assets directory');
-  }
-  
-  return distExists && serverExists;
+];
+
+// Test results
+let passed = 0;
+let failed = 0;
+let warnings = 0;
+
+function makeRequest(path) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(path, baseUrl);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'GET',
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Deployment-Verification/1.0'
+      }
+    };
+
+    const req = httpModule.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode,
+          headers: res.headers,
+          data: data,
+          responseTime: Date.now() - startTime
+        });
+      });
+    });
+
+    const startTime = Date.now();
+    
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    
+    req.end();
+  });
 }
 
-function checkEnvironmentFiles() {
-  console.log('\n🔧 Environment Configuration:');
+async function runTest(test) {
+  process.stdout.write(`Testing ${test.name}... `);
   
-  checkFile('.env.example', 'Environment template');
-  
-  console.log('\n📋 Required Environment Variables for Production:');
-  console.log('   • DATABASE_URL - PostgreSQL connection string');
-  console.log('   • NODE_ENV=production');
-  console.log('   • PORT=10000 (required by Render)');
-}
-
-function main() {
-  console.log('🚀 LeetCode Tracker - Deployment Verification\n');
-  
-  console.log('📋 Deployment Configuration Files:');
-  const configFiles = [
-    ['render.yaml', 'Render service configuration'],
-    ['deploy-simple.cjs', 'Deployment script'],
-    ['.nvmrc', 'Node.js version specification'],
-    ['Procfile', 'Process configuration'],
-    ['healthcheck.js', 'Health check script'],
-    ['app.json', 'Platform compatibility'],
-    ['.gitignore', 'Git ignore rules']
-  ];
-  
-  let allConfigsPresent = true;
-  for (const [file, desc] of configFiles) {
-    if (!checkFile(file, desc)) {
-      allConfigsPresent = false;
+  try {
+    const response = await makeRequest(test.path);
+    
+    if (response.status === test.expectedStatus) {
+      console.log(`✅ PASS (${response.responseTime}ms)`);
+      passed++;
+      
+      // Additional checks for specific endpoints
+      if (test.path === '/healthcheck') {
+        try {
+          const health = JSON.parse(response.data);
+          if (health.status === 'healthy') {
+            console.log(`   Database: ${health.database}`);
+            console.log(`   Cache: ${health.cache.status} (${health.cache.entriesCount} entries)`);
+            console.log(`   Environment: ${health.environment}`);
+          } else {
+            console.log(`   ⚠️  Health check reports unhealthy: ${health.error || 'Unknown'}`);
+            warnings++;
+          }
+        } catch (e) {
+          console.log(`   ⚠️  Invalid health check response format`);
+          warnings++;
+        }
+      }
+      
+      if (test.path === '/api/cache/status') {
+        try {
+          const cacheData = JSON.parse(response.data);
+          if (cacheData.cacheStatus && cacheData.cacheStatus.length > 0) {
+            const activeCache = cacheData.cacheStatus.filter(c => !c.expired);
+            console.log(`   Cache entries: ${activeCache.length} active, ${cacheData.cacheStatus.length} total`);
+          }
+        } catch (e) {
+          console.log(`   ⚠️  Could not parse cache status`);
+          warnings++;
+        }
+      }
+      
+    } else {
+      console.log(`❌ FAIL (Expected ${test.expectedStatus}, got ${response.status})`);
+      if (test.critical) {
+        failed++;
+      } else {
+        warnings++;
+      }
+      
+      // Try to parse error response
+      try {
+        const errorData = JSON.parse(response.data);
+        if (errorData.error) {
+          console.log(`   Error: ${errorData.error}`);
+        }
+      } catch (e) {
+        // Not JSON, show first 100 chars
+        const preview = response.data.substring(0, 100).replace(/\n/g, ' ');
+        if (preview) {
+          console.log(`   Response: ${preview}...`);
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.log(`❌ ERROR (${error.message})`);
+    if (test.critical) {
+      failed++;
+    } else {
+      warnings++;
     }
   }
+}
+
+async function testCachePerformance() {
+  console.log('\n🏃 Testing cache performance...');
   
-  console.log('\n📚 Documentation:');
-  checkFile('README.md', 'Main documentation');
-  checkFile('RENDER_DEPLOYMENT_SETUP.md', 'Deployment guide');
-  checkFile('replit.md', 'Project documentation');
+  const testEndpoints = [
+    '/api/dashboard/admin',
+    '/api/dashboard/university',
+    '/api/leaderboard'
+  ];
   
-  const buildOutputValid = checkBuildOutput();
-  checkEnvironmentFiles();
-  
-  console.log('\n🎯 Package Configuration:');
-  const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-  const hasRequiredScripts = packageJson.scripts.build && packageJson.scripts.start;
-  console.log(`${hasRequiredScripts ? '✅' : '❌'} Build and start scripts: present`);
-  
-  console.log('\n📊 Summary:');
-  console.log(`Configuration Files: ${allConfigsPresent ? '✅ All present' : '❌ Missing files'}`);
-  console.log(`Build Output: ${buildOutputValid ? '✅ Ready' : '❌ Need to run build'}`);
-  console.log(`Package Scripts: ${hasRequiredScripts ? '✅ Ready' : '❌ Missing scripts'}`);
-  
-  if (allConfigsPresent && buildOutputValid && hasRequiredScripts) {
-    console.log('\n🎉 READY FOR DEPLOYMENT!');
-    console.log('\nNext steps:');
-    console.log('1. Create Neon database and get connection string');
-    console.log('2. Deploy to Render with environment variables');
-    console.log('3. Visit deployed app and complete setup');
-    console.log('\nSee RENDER_DEPLOYMENT_SETUP.md for detailed instructions.');
-  } else {
-    console.log('\n⚠️  Please fix the issues above before deploying.');
+  for (const endpoint of testEndpoints) {
+    try {
+      process.stdout.write(`  ${endpoint}... `);
+      
+      // First request (cache miss or stale)
+      const start1 = Date.now();
+      await makeRequest(endpoint);
+      const time1 = Date.now() - start1;
+      
+      // Second request (should be cached)
+      const start2 = Date.now();
+      await makeRequest(endpoint);
+      const time2 = Date.now() - start2;
+      
+      const improvement = time1 > time2 ? Math.round(((time1 - time2) / time1) * 100) : 0;
+      
+      if (time2 < 500) {
+        console.log(`✅ ${time1}ms → ${time2}ms (${improvement}% faster)`);
+      } else {
+        console.log(`⚠️  ${time1}ms → ${time2}ms (cache may not be effective)`);
+        warnings++;
+      }
+      
+    } catch (error) {
+      console.log(`❌ ${error.message}`);
+      warnings++;
+    }
   }
 }
 
-main();
+async function main() {
+  console.log('');
+  
+  // Run all tests
+  for (const test of tests) {
+    await runTest(test);
+  }
+  
+  // Test cache performance
+  await testCachePerformance();
+  
+  // Summary
+  console.log('\n📊 Test Summary:');
+  console.log(`✅ Passed: ${passed}`);
+  console.log(`❌ Failed: ${failed}`);
+  console.log(`⚠️  Warnings: ${warnings}`);
+  
+  if (failed === 0) {
+    console.log('\n🎉 Deployment verification completed successfully!');
+    console.log('Your application is ready for production use.');
+    
+    if (warnings > 0) {
+      console.log(`\n⚠️  ${warnings} warnings detected - check logs above for details.`);
+    }
+    
+    console.log('\n📝 Next steps:');
+    console.log('1. Visit the admin dashboard to initialize student data');
+    console.log('2. Test the cache warm-up functionality');
+    console.log('3. Monitor performance in production');
+    
+    process.exit(0);
+  } else {
+    console.log(`\n💥 Deployment verification failed with ${failed} critical errors.`);
+    console.log('Please check the application logs and fix the issues before proceeding.');
+    process.exit(1);
+  }
+}
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  console.error('\n💥 Uncaught exception:', error.message);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('\n💥 Unhandled rejection:', reason);
+  process.exit(1);
+});
+
+main().catch(error => {
+  console.error('\n💥 Verification script failed:', error.message);
+  process.exit(1);
+});

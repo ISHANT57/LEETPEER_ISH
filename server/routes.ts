@@ -1147,6 +1147,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Health check endpoint for Render deployment
+  app.get('/healthcheck', async (req, res) => {
+    try {
+      // Check database connection by trying a simple query
+      const dbCheck = await storage.checkConnection();
+      
+      // Check cache status
+      const cacheStatus = await cacheService.getCacheStatus();
+      const totalCached = cacheStatus.filter(c => !c.expired).length;
+      
+      res.status(200).json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        database: dbCheck ? 'connected' : 'disconnected',
+        cache: {
+          enabled: true,
+          entriesCount: totalCached,
+          status: totalCached > 0 ? 'active' : 'warming'
+        },
+        version: '2.0.0',
+        environment: process.env.NODE_ENV || 'development'
+      });
+    } catch (error) {
+      console.error('Health check failed:', error);
+      res.status(503).json({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Start the scheduler
   schedulerService.startDailySync();
 

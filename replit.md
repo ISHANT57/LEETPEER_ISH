@@ -39,6 +39,7 @@ Preferred communication style: Simple, everyday language.
 - **Batch Separation**: Full support for distinct student batches with batch-specific APIs, dashboards, and leaderboards.
 - **Profile Photo Integration**: Syncs LeetCode profile photos for display across the application.
 - **Activity Tracking**: GitHub-style activity heatmap, total active days, and maximum streak tracking.
+- **Advanced Caching System**: Intelligent caching layer with stale-while-revalidate pattern for instant dashboard loading, background refresh, and cache management controls.
 
 ## External Dependencies
 
@@ -76,3 +77,12 @@ Preferred communication style: Simple, everyday language.
 - ✅ Backend compiles to single ESM file (168KB)
 - ✅ Static assets deployed to server/public correctly
 - ✅ Health check endpoint functional
+- ✅ Caching system integrated with database schema and automatic warm-up
+
+### Cache System Features (August 2025)
+- **Instant Loading**: Dashboard data cached in PostgreSQL with 15-minute refresh cycle
+- **Stale-While-Revalidate**: Shows cached data immediately while refreshing in background
+- **Smart Cache Management**: Admin controls for cache status, warm-up, and clearing
+- **Client-Side Caching**: LocalStorage integration for seamless user experience
+- **Cache Indicators**: Visual feedback showing data freshness and cache status
+- **Production Ready**: Automatic cache warm-up on startup, cleanup scheduler, and error handling

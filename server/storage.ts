@@ -117,6 +117,9 @@ export interface IStorage {
     leetcodeUsername: string;
     currentWeekScore: number;
   }>): Promise<{ imported: number; updated: number; errors: string[] }>;
+  
+  // Connection check
+  checkConnection(): Promise<boolean>;
 }
 
 export class PostgreSQLStorage implements IStorage {
@@ -1408,6 +1411,17 @@ export class PostgreSQLStorage implements IStorage {
     }
 
     return stats;
+  }
+
+  // Connection check method
+  async checkConnection(): Promise<boolean> {
+    try {
+      await db.select().from(students).limit(1);
+      return true;
+    } catch (error) {
+      console.error('Database connection check failed:', error);
+      return false;
+    }
   }
 }
 
