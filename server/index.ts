@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { db } from "./db";
+import { cacheService } from "./services/cache";
 
 const app = express();
 app.use(express.json());
@@ -42,6 +43,19 @@ app.use((req, res, next) => {
     // Test database connection
     await db.execute('SELECT 1');
     console.log('PostgreSQL connected successfully');
+
+    // Initialize cache service and warm up cache
+    cacheService.startCacheCleanup();
+    
+    // Warm up cache after a brief delay to ensure all services are ready
+    setTimeout(async () => {
+      try {
+        await cacheService.warmUpCache();
+        console.log('Initial cache warm-up completed');
+      } catch (error) {
+        console.log('Cache warm-up delayed due to initialization:', error instanceof Error ? error.message : 'Unknown error');
+      }
+    }, 10000); // 10 second delay
 
     const server = await registerRoutes(app);
 

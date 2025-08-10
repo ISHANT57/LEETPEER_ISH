@@ -103,6 +103,16 @@ export const leetcodeRealTimeData = pgTable("leetcode_realtime_data", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Dashboard cache table for instant loading
+export const dashboardCache = pgTable("dashboard_cache", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cacheKey: text("cache_key").notNull().unique(), // 'admin', 'university', 'batch_2027', 'batch_2028', 'student_{id}'
+  cacheData: jsonb("cache_data").notNull(), // Stores the complete dashboard data as JSON
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(), // Auto-expire cached data
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertStudentSchema = createInsertSchema(students).omit({
   id: true,
@@ -139,6 +149,11 @@ export const insertLeetcodeRealTimeDataSchema = createInsertSchema(leetcodeRealT
   lastSyncAt: true,
 });
 
+export const insertDashboardCacheSchema = createInsertSchema(dashboardCache).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -163,6 +178,9 @@ export type InsertWeeklyProgressData = z.infer<typeof insertWeeklyProgressDataSc
 
 export type LeetcodeRealTimeData = typeof leetcodeRealTimeData.$inferSelect;
 export type InsertLeetcodeRealTimeData = z.infer<typeof insertLeetcodeRealTimeDataSchema>;
+
+export type DashboardCache = typeof dashboardCache.$inferSelect;
+export type InsertDashboardCache = z.infer<typeof insertDashboardCacheSchema>;
 
 export type AppSettings = typeof appSettings.$inferSelect;
 

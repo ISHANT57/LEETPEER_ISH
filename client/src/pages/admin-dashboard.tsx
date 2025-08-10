@@ -7,15 +7,16 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import BatchStats from "@/components/admin/batch-stats";
 import StudentTable from "@/components/admin/student-table";
+import CacheStatusComponent from "@/components/admin/cache-status";
+import { CacheIndicator } from "@/components/ui/cache-indicator";
+import { useCachedDashboard } from "@/hooks/use-cached-query";
 import type { AdminDashboardData } from "@shared/schema";
 
 export default function AdminDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error } = useQuery<AdminDashboardData>({
-    queryKey: ['/api/dashboard/admin'],
-  });
+  const { data, isLoading, error, isFromCache, cacheAge, refetchInBackground } = useCachedDashboard<AdminDashboardData>('/api/dashboard/admin');
 
 
 
@@ -158,7 +159,14 @@ export default function AdminDashboard() {
                   <Shield className="text-white" size={24} />
                 </div>
                 <div>
-                  <h1 className="text-4xl font-bold text-white">Admin Dashboard</h1>
+                  <div className="flex items-center gap-3">
+                    <h1 className="text-4xl font-bold text-white">Admin Dashboard</h1>
+                    <CacheIndicator 
+                      isFromCache={isFromCache} 
+                      cacheAge={cacheAge}
+                      className="bg-white/20 text-white border-white/30"
+                    />
+                  </div>
                   <p className="text-white/80 text-lg">
                     Management & Analytics Control Center
                   </p>
@@ -278,6 +286,9 @@ export default function AdminDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Cache Status Component */}
+        <CacheStatusComponent />
       </div>
     </div>
   );

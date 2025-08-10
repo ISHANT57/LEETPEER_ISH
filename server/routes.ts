@@ -7,6 +7,7 @@ import { leetCodeService } from "./services/leetcode";
 import { schedulerService } from "./services/scheduler";
 import { csvImportService } from "./services/csv-import";
 import { weeklyProgressImportService } from "./services/weekly-progress-import";
+import { cacheService } from "./services/cache";
 import path from 'path';
 import { insertStudentSchema, students, weeklyProgressData, dailyProgress } from "@shared/schema";
 import { db } from "./db";
@@ -208,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get student dashboard data
+  // Get student dashboard data - with caching
   app.get("/api/dashboard/student/:username", authenticateToken, requireAdminOrOwnData, async (req, res) => {
     try {
       const { username } = req.params;
@@ -216,50 +217,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!student) {
         return res.status(404).json({ error: "Student not found" });
       }
-      const dashboardData = await storage.getStudentDashboard(student.id);
       
-      if (!dashboardData) {
-        return res.status(404).json({ error: "Student not found" });
+      const result = await cacheService.getDataWithCache(
+        `student_${student.id}`,
+        () => storage.getStudentDashboard(student.id)
+      );
+      
+      if (!result.data) {
+        return res.status(404).json({ error: "Student dashboard not found" });
       }
       
-      res.json(dashboardData);
+      res.set('X-Cache-Status', result.fromCache ? 'HIT' : 'MISS');
+      res.json(result.data);
     } catch (error) {
       console.error('Error fetching student dashboard:', error);
       res.status(500).json({ error: "Failed to fetch dashboard data" });
     }
   });
 
-  // Get admin dashboard data (Admin only)
+  // Get admin dashboard data (Admin only) - with caching
   app.get("/api/dashboard/admin", authenticateToken, requireRole("admin"), async (req, res) => {
     try {
-      const dashboardData = await storage.getAdminDashboard();
-      res.json(dashboardData);
+      const result = await cacheService.getDataWithCache(
+        'admin',
+        () => storage.getAdminDashboard()
+      );
+      
+      // Add cache metadata to response headers
+      res.set('X-Cache-Status', result.fromCache ? 'HIT' : 'MISS');
+      res.json(result.data);
     } catch (error) {
       console.error('Error fetching admin dashboard:', error);
       res.status(500).json({ error: "Failed to fetch admin dashboard data" });
     }
   });
 
-  // Get batch dashboard data
+  // Get batch dashboard data - with caching
   app.get("/api/dashboard/batch/:batch", async (req, res) => {
     try {
       const { batch } = req.params;
       if (!["2027", "2028"].includes(batch)) {
         return res.status(400).json({ error: "Invalid batch. Must be 2027 or 2028" });
       }
-      const dashboardData = await storage.getBatchDashboard(batch);
-      res.json(dashboardData);
+      
+      const result = await cacheService.getDataWithCache(
+        `batch_${batch}`,
+        () => storage.getBatchDashboard(batch)
+      );
+      
+      res.set('X-Cache-Status', result.fromCache ? 'HIT' : 'MISS');
+      res.json(result.data);
     } catch (error) {
       console.error('Error fetching batch dashboard:', error);
       res.status(500).json({ error: "Failed to fetch batch dashboard data" });
     }
   });
 
-  // Get university dashboard data (combined batches)
+  // Get university dashboard data (combined batches) - with caching
   app.get("/api/dashboard/university", async (req, res) => {
     try {
-      const dashboardData = await storage.getUniversityDashboard();
-      res.json(dashboardData);
+      const result = await cacheService.getDataWithCache(
+        'university',
+        () => storage.getUniversityDashboard()
+      );
+      
+      res.set('X-Cache-Status', result.fromCache ? 'HIT' : 'MISS');
+      res.json(result.data);
     } catch (error) {
       console.error('Error fetching university dashboard:', error);
       res.status(500).json({ error: "Failed to fetch university dashboard data" });
@@ -428,6 +451,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  // Cache management endpoints (Admin only)
+  app.post("/api/cache/warm-up", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      await cacheService.warmUpCache();
+      res.json({ message: "Cache warm-up completed successfully" });
+    } catch (error) {
+      console.error('Error warming up cache:', error);
+      res.status(500).json({ error: "Failed to warm up cache" });
+    }
+  });
+
+  app.post("/api/cache/clear", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const { cacheKey } = req.body;
+      if (cacheKey) {
+        await cacheService.clearCache(cacheKey);
+        res.json({ message: `Cache cleared for key: ${cacheKey}` });
+      } else {
+        await cacheService.clearAllCache();
+        res.json({ message: "All cache cleared successfully" });
+      }
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+      res.status(500).json({ error: "Failed to clear cache" });
+    }
+  });
+
+  app.get("/api/cache/status", authenticateToken, requireRole("admin"), async (req, res) => {
+    try {
+      const keys = ['admin', 'university', 'batch_2027', 'batch_2028'];
+      const status = await Promise.all(
+        keys.map(async (key) => ({
+          key,
+          expired: await cacheService.isCacheExpired(key),
+          hasData: (await cacheService.getCachedData(key)) !== null
+        }))
+      );
+      res.json({ cacheStatus: status });
+    } catch (error) {
+      console.error('Error checking cache status:', error);
+      res.status(500).json({ error: "Failed to check cache status" });
     }
   });
 
