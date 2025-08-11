@@ -41,29 +41,34 @@ app.use((req, res, next) => {
 (async () => {
   try {
     // Test database connection
-    await db.execute('SELECT 1');
-    console.log('PostgreSQL connected successfully');
+    await db.execute("SELECT 1");
+    console.log("PostgreSQL connected successfully");
 
     // Initialize cache service and warm up cache
     cacheService.startCacheCleanup();
-    
-    // Warm up cache after services are ready (production-safe timing)
-    const cacheWarmupDelay = process.env.NODE_ENV === 'production' ? 30000 : 10000; // 30s for production, 10s for dev
+
+    const cacheWarmupDelay =
+      process.env.NODE_ENV === "production" ? 30000 : 10000;
+
     setTimeout(async () => {
       try {
-        console.log('Starting cache warm-up...');
+        console.log("Starting cache warm-up...");
         await cacheService.warmUpCache();
-        console.log('Cache warm-up completed successfully');
+        console.log("Cache warm-up completed successfully");
       } catch (error) {
-        console.log('Cache warm-up will retry later:', error instanceof Error ? error.message : 'Unknown error');
-        // Retry once after 2 minutes in production
-        if (process.env.NODE_ENV === 'production') {
+        console.log(
+          "Cache warm-up will retry later:",
+          error instanceof Error ? error.message : "Unknown error"
+        );
+        if (process.env.NODE_ENV === "production") {
           setTimeout(async () => {
             try {
               await cacheService.warmUpCache();
-              console.log('Cache warm-up retry completed');
+              console.log("Cache warm-up retry completed");
             } catch (retryError) {
-              console.log('Cache warm-up retry failed - will rely on on-demand caching');
+              console.log(
+                "Cache warm-up retry failed - will rely on on-demand caching"
+              );
             }
           }, 120000);
         }
@@ -75,34 +80,28 @@ app.use((req, res, next) => {
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
-
       res.status(status).json({ message });
       throw err;
     });
 
-    // importantly only setup vite in development and after
-    // setting up all the other routes so the catch-all route
-    // doesn't interfere with the other routes
     if (app.get("env") === "development") {
       await setupVite(app, server);
     } else {
       serveStatic(app);
     }
 
-    // ALWAYS serve the app on the port specified in the environment variable PORT
-    // Other ports are firewalled. Default to 5000 if not specified.
-    // this serves both the API and the client.
-    // It is the only port that is not firewalled.
-    const port = parseInt(process.env.PORT || '5000', 10);
-    server.listen({
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    }, () => {
-      log(`serving on port ${port}`);
+    // Port & Host Setup
+    const port = parseInt(process.env.PORT || "5000", 10);
+    let host = process.env.HOST || "localhost";
+    if (process.env.NODE_ENV === "production") {
+      host = "0.0.0.0";
+    }
+
+    server.listen({ port, host }, () => {
+      log(`Serving on http://${host}:${port}`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error("Failed to start server:", error);
     process.exit(1);
   }
 })();
