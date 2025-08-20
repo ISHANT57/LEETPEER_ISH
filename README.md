@@ -4,7 +4,6 @@ A comprehensive LeetCode performance tracking and analytics platform designed to
 
 ## 🚀 Live Demo
 
-Deploy instantly to Render: [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
 ## ✨ Features
 
